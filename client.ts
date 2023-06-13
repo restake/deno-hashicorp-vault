@@ -2,6 +2,8 @@ import { VAULT_AUTH_TYPE, VaultApproleCredentials, VaultAuthentication, VaultCre
 import { LoginResponse, TokenLookupResponse } from "./types.ts";
 import { doVaultFetch } from "./vault.ts";
 
+import { ZodType } from "zod";
+
 export class VaultClient<T extends VaultAuthentication> {
     private credentials: VaultCredentials<T>;
     private currentToken: string | undefined;
@@ -132,6 +134,33 @@ export class VaultClient<T extends VaultAuthentication> {
             accessor: res.auth.accessor,
             lease_duration: res.auth.lease_duration,
         };
+    }
+
+    async read<T extends ZodType>(type: T, endpoint: string): Promise<T> {
+        const { address, namespace } = this.credentials;
+
+        return await doVaultFetch(
+            type,
+            address,
+            namespace,
+            this.currentToken,
+            endpoint,
+            { method: "GET" },
+        );
+    }
+
+    async write<T extends ZodType>(type: T, endpoint: string, body: unknown): Promise<T> {
+        const { address, namespace } = this.credentials;
+
+        return await doVaultFetch(
+            type,
+            address,
+            namespace,
+            this.currentToken,
+            endpoint,
+            { method: "POST" },
+            body,
+        );
     }
 
     private assertToken() {
