@@ -1,7 +1,8 @@
-import { z } from "zod";
 import { VAULT_AUTH_TYPE, VaultTokenCredentials } from "./auth.ts";
 import { VaultClient } from "./client.ts";
 import { doVaultFetch } from "./vault.ts";
+
+import { z } from "zod";
 
 const vaultAddress = "http://127.0.0.1:8200";
 const vaultToken = "foobarbaz123";
