@@ -1,0 +1,10 @@
+{
+    "fmt": {
+        "lineWidth": 140,
+        "indentWidth": 4
+    },
+    "imports": {
+        "zod": "https://deno.land/x/zod@v3.21.4/mod.ts",
+        "$std/": "https://deno.land/std@0.188.0/"
+    }
+}
