@@ -1,6 +1,7 @@
-import { ZodType } from "zod";
+import { z } from "./deps.ts";
+import type { ZodType } from "./deps.ts";
+
 import { fetchJSONZod } from "./http.ts";
-import { z } from "zod";
 
 export async function doVaultFetch<T extends ZodType, R extends z.output<T>>(
     validator: T,

@@ -1,5 +1,5 @@
-import { z } from "zod";
-import type { ZodType } from "zod";
+import { z } from "./deps.ts";
+import type { ZodType } from "./deps.ts";
 
 export async function fetchJSONOnlyOk<T = unknown>(response: Response): Promise<T> {
     if (!response.ok) {

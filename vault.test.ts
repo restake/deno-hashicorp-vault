@@ -1,5 +1,4 @@
-import { stub } from "$std/testing/mock.ts";
-import { assertRejects } from "$std/testing/asserts.ts";
+import { assertRejects, stub } from "./deps_test.ts";
 
 function fakeFetch(): typeof globalThis.fetch {
     return (_input: string | URL | Request, _init?: RequestInit): Promise<Response> => {

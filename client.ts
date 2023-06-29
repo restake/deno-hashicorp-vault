@@ -1,8 +1,8 @@
+import type { ZodType } from "./deps.ts";
+
 import { VAULT_AUTH_TYPE, VaultApproleCredentials, VaultAuthentication, VaultCredentials, VaultTokenCredentials } from "./auth.ts";
 import { LoginResponse, TokenLookupResponse } from "./types.ts";
 import { doVaultFetch } from "./vault.ts";
-
-import { ZodType } from "zod";
 
 export class VaultClient<T extends VaultAuthentication> {
     private credentials: VaultCredentials<T>;

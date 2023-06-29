@@ -1,4 +1,5 @@
-import { z, ZodType } from "zod";
+import { z } from "./deps.ts";
+import type { ZodType } from "./deps.ts";
 
 export const ErrorResponse = z.object({
     errors: z.array(z.string()),
