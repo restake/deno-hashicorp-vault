@@ -47,8 +47,16 @@ export function createReadResponse<T extends ZodType>(response: T) {
         renewable: z.boolean(),
         lease_duration: z.number(),
         data: response,
-        warnings: z.array(z.string()),
+        warnings: z.array(z.string()).nullish(),
     });
 }
 
 export type ReadResponse<T extends ZodType> = z.infer<ReturnType<typeof createReadResponse<T>>>;
+
+function createKVReadResponse<T extends ZodType>(response: T) {
+    return createReadResponse(z.object({
+        data: response,
+    }));
+}
+
+export type KVReadResponse<T extends ZodType> = z.infer<ReturnType<typeof createKVReadResponse<T>>>;
