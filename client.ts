@@ -1,7 +1,7 @@
-import type { z, ZodType } from "./deps.ts";
+import { z, ZodType } from "./deps.ts";
 
 import { VAULT_AUTH_TYPE, VaultApproleCredentials, VaultAuthentication, VaultCredentials, VaultTokenCredentials } from "./auth.ts";
-import { LoginResponse, TokenLookupResponse } from "./types.ts";
+import { createGenericResponse, LoginResponse, TokenLookupResponse } from "./types.ts";
 import { doVaultFetch } from "./vault.ts";
 
 export type VaultRequestOptions = {
@@ -193,6 +193,45 @@ export class VaultClient<T extends VaultAuthentication> {
                 },
             },
             body,
+        );
+    }
+
+    async unwrap<
+        T extends ZodType,
+        R = z.output<T>,
+    >(type: T, wrappingToken: string, expectedCreationPath?: string): Promise<R> {
+        const { address, namespace } = this.credentials;
+
+        // Check creation path, if specified
+        if (expectedCreationPath) {
+            const { data: creationData } = await doVaultFetch(
+                createGenericResponse(z.object({ creation_path: z.string() })),
+                address,
+                namespace,
+                wrappingToken,
+                "sys/wrapping/lookup",
+                {
+                    method: "POST",
+                },
+                {
+                    token: wrappingToken,
+                },
+            );
+
+            if (expectedCreationPath !== creationData.creation_path) {
+                throw new Error(`Expected creation path '${expectedCreationPath}', got '${creationData.creation_path}'`);
+            }
+        }
+
+        return await doVaultFetch(
+            type,
+            address,
+            namespace,
+            wrappingToken,
+            "sys/wrapping/unwrap",
+            {
+                method: "POST",
+            },
         );
     }
 

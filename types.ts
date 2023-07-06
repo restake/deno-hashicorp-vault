@@ -40,6 +40,23 @@ export function createGenericResponse<T extends ZodType>(response: T) {
 
 export type GenericResponse<T extends ZodType> = z.infer<ReturnType<typeof createGenericResponse<T>>>;
 
+export const WrapInfo = z.object({
+    token: z.string(),
+    accessor: z.string(),
+    ttl: z.number(),
+    creation_time: z.string(),
+    creation_path: z.string(),
+    wrapped_accessor: z.string(),
+});
+
+export type WrapInfo = z.infer<typeof WrapInfo>;
+
+export const WrapResponse = z.object({
+    wrap_info: WrapInfo,
+});
+
+export type WrapResponse = z.infer<typeof WrapResponse>;
+
 export function createReadResponse<T extends ZodType>(response: T) {
     return z.object({
         request_id: z.string(),
@@ -47,6 +64,7 @@ export function createReadResponse<T extends ZodType>(response: T) {
         renewable: z.boolean(),
         lease_duration: z.number(),
         data: response,
+        wrap_info: z.nullable(WrapInfo),
         warnings: z.array(z.string()).nullish(),
     });
 }
