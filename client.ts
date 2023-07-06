@@ -8,6 +8,7 @@ export class VaultClient<T extends VaultAuthentication> {
     private credentials: VaultCredentials<T>;
     private currentToken: string | undefined;
     private currentTokenAccessor: string | undefined;
+    private currentLeaseDuration = 0;
     private renewTimerHandle: number | undefined;
 
     constructor(credentials: VaultCredentials<T>) {
@@ -17,7 +18,7 @@ export class VaultClient<T extends VaultAuthentication> {
     async login(): Promise<void> {
         const authType = this.credentials.authentication[VAULT_AUTH_TYPE];
 
-        let leaseDuration = 0;
+        this.currentLeaseDuration = 0;
         let isRenewable = false;
 
         switch (authType) {
@@ -26,7 +27,7 @@ export class VaultClient<T extends VaultAuthentication> {
                 this.currentToken = client_token;
                 this.currentTokenAccessor = accessor;
 
-                leaseDuration = lease_duration;
+                this.currentLeaseDuration = lease_duration;
                 isRenewable = renewable;
                 break;
             }
@@ -37,7 +38,7 @@ export class VaultClient<T extends VaultAuthentication> {
                 const { data: { accessor, renewable, ttl } } = await this.lookup();
                 this.currentTokenAccessor = accessor;
 
-                leaseDuration = ttl;
+                this.currentLeaseDuration = ttl;
                 isRenewable = renewable;
                 break;
             }
@@ -46,8 +47,8 @@ export class VaultClient<T extends VaultAuthentication> {
             }
         }
 
-        if (isRenewable && leaseDuration > 0) {
-            this.createRenewTimer(leaseDuration);
+        if (isRenewable && this.currentLeaseDuration > 0) {
+            this.createRenewTimer(this.currentLeaseDuration);
         }
     }
 
@@ -175,13 +176,19 @@ export class VaultClient<T extends VaultAuthentication> {
     // Returns renew interval in milliseconds minus buffer
     private renewInterval(leaseDuration: number): number {
         const buffer = Math.ceil(leaseDuration / 5);
-        return (leaseDuration - buffer) * 1000;
+        const desired = Math.max(leaseDuration - buffer, 1) * 1000;
+        return Math.min(desired, 2_147_483_647);
     }
 
     private async renewTimer(): Promise<{ lease_duration: number }> {
-        const { accessor, lease_duration } = await this.renewToken();
-        this.currentTokenAccessor = accessor;
-        return { lease_duration };
+        try {
+            const { accessor, lease_duration } = await this.renewToken();
+            this.currentTokenAccessor = accessor;
+            return { lease_duration };
+        } catch (e) {
+            console.error("[vault] Failed to renew lease, retrying next cycle", e);
+            return { lease_duration: this.currentLeaseDuration };
+        }
     }
 
     private createRenewTimer(leaseDuration: number) {
