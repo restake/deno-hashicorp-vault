@@ -28,7 +28,7 @@ export class VaultClient<T extends VaultAuthentication> {
                 this.currentTokenAccessor = accessor;
 
                 this.currentLeaseDuration = lease_duration;
-                isRenewable = renewable;
+                isRenewable = renewable && accessor !== "";
                 break;
             }
             case "token": {
@@ -39,7 +39,7 @@ export class VaultClient<T extends VaultAuthentication> {
                 this.currentTokenAccessor = accessor;
 
                 this.currentLeaseDuration = ttl;
-                isRenewable = renewable;
+                isRenewable = renewable && accessor !== "";
                 break;
             }
             default: {
