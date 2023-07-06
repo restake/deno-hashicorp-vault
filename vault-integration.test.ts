@@ -5,7 +5,7 @@ import { assertEquals, delay } from "./deps_test.ts";
 import { VAULT_AUTH_TYPE, VaultTokenCredentials } from "./auth.ts";
 import { VaultClient } from "./client.ts";
 import { doVaultFetch } from "./vault.ts";
-import { createKVReadResponse, KVListResponse } from "./types.ts";
+import { createKVReadResponse, createReadResponse, KVListResponse } from "./types.ts";
 
 const _vaultAddr = "127.0.0.1:8200";
 const vaultAddress = `http://${_vaultAddr}`;
@@ -136,6 +136,47 @@ Deno.test({
         const orphanToken = await client.issueToken();
 
         console.log("Issued new orphan token", orphanToken);
+    },
+});
+
+Deno.test({
+    name: "KV 1 engine read & write & list",
+    ignore: !hasRequiredPermissions,
+    sanitizeOps: false,
+    sanitizeResources: false,
+    async fn() {
+        await ensureVaultReady();
+
+        const client = await createVaultClient();
+
+        await withSecretMount(client, "kv", "kv", async (client) => {
+            const date = new Date().toISOString();
+            const count = 5;
+
+            const secretStructure = z.object({
+                value: z.string(),
+                date: z.string(),
+            });
+
+            // Write a few secrets
+            for (let i = 0; i < count; i++) {
+                await client.write(undefined, `kv/secret/testing/${i}`, {
+                    value: `bar${i}`,
+                    date,
+                });
+            }
+
+            // List secrets
+            const { data: { keys: secrets } } = await client.read(KVListResponse, "kv/secret/testing", "LIST");
+            assertEquals(secrets.length, count);
+
+            // Read secrets
+            for (let i = 0; i < count; i++) {
+                const { data: secret } = await client.read(createReadResponse(secretStructure), `kv/secret/testing/${i}`);
+                assertEquals(secret.value, `bar${i}`);
+                assertEquals(secret.date, date);
+            }
+        });
     },
 });
 
