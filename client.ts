@@ -25,6 +25,11 @@ export class VaultClient<T extends VaultAuthentication> {
         return this.currentToken!;
     }
 
+    get accessor(): string {
+        this.assertToken();
+        return this.currentTokenAccessor!;
+    }
+
     async login(): Promise<void> {
         const authType = this.credentials.authentication[VAULT_AUTH_TYPE];
 
