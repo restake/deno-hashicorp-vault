@@ -268,8 +268,6 @@ Deno.test({
 Deno.test({
     name: "AppRole authentication",
     ignore: !hasRequiredPermissions,
-    sanitizeOps: false,
-    sanitizeResources: false,
     async fn() {
         const { client: rootClient, dispose } = await ensureVaultReady();
 
