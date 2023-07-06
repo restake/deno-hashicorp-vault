@@ -157,7 +157,7 @@ async function withAuthMount<
 
         return await fn(client);
     } finally {
-        await client.write(undefined, `sys/auth/${path}`, undefined, "DELETE");
+        await client.write(undefined, `sys/auth/${path}`, undefined, { method: "DELETE" });
     }
 }
 
@@ -169,7 +169,7 @@ async function withSecretMount<
 
         return await fn(client);
     } finally {
-        await client.write(undefined, `sys/mounts/${path}`, undefined, "DELETE");
+        await client.write(undefined, `sys/mounts/${path}`, undefined, { method: "DELETE" });
     }
 }
 
@@ -209,7 +209,7 @@ Deno.test({
             }
 
             // List secrets
-            const { data: { keys: secrets } } = await client.read(KVListResponse, "kv/secret/testing", "LIST");
+            const { data: { keys: secrets } } = await client.read(KVListResponse, "kv/secret/testing", { method: "LIST" });
             assertEquals(secrets.length, count);
 
             // Read secrets
@@ -250,7 +250,7 @@ Deno.test({
             }
 
             // List secrets
-            const { data: { keys: secrets } } = await client.read(KVListResponse, "kv/metadata/testing", "LIST");
+            const { data: { keys: secrets } } = await client.read(KVListResponse, "kv/metadata/testing", { method: "LIST" });
             assertEquals(secrets.length, count);
 
             // Read secrets

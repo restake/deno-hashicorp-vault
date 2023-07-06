@@ -4,6 +4,11 @@ import { VAULT_AUTH_TYPE, VaultApproleCredentials, VaultAuthentication, VaultCre
 import { LoginResponse, TokenLookupResponse } from "./types.ts";
 import { doVaultFetch } from "./vault.ts";
 
+export type VaultRequestOptions = {
+    method?: string;
+    wrapTTL?: number | string;
+};
+
 export class VaultClient<T extends VaultAuthentication> {
     private credentials: VaultCredentials<T>;
     private currentToken: string | undefined;
@@ -144,7 +149,10 @@ export class VaultClient<T extends VaultAuthentication> {
         };
     }
 
-    async read<T extends ZodType, R = z.output<T>>(type: T, endpoint: string, method = "GET"): Promise<R> {
+    async read<
+        T extends ZodType,
+        R = z.output<T>,
+    >(type: T, endpoint: string, opts?: VaultRequestOptions): Promise<R> {
         this.assertToken();
 
         const { address, namespace } = this.credentials;
@@ -155,14 +163,19 @@ export class VaultClient<T extends VaultAuthentication> {
             namespace,
             this.currentToken,
             endpoint,
-            { method },
+            {
+                method: opts?.method ?? "GET",
+                headers: {
+                    ...(opts?.wrapTTL && { "x-vault-wrap-ttl": `${opts.wrapTTL}` }),
+                },
+            },
         );
     }
 
     async write<
         T extends ZodType | undefined,
         R extends (T extends ZodType ? z.output<T> : undefined),
-    >(type: T, endpoint: string, body: unknown, method = "POST"): Promise<R> {
+    >(type: T, endpoint: string, body: unknown, opts?: VaultRequestOptions): Promise<R> {
         this.assertToken();
 
         const { address, namespace } = this.credentials;
@@ -173,7 +186,12 @@ export class VaultClient<T extends VaultAuthentication> {
             namespace,
             this.currentToken,
             endpoint,
-            { method },
+            {
+                method: opts?.method ?? "POST",
+                headers: {
+                    ...(opts?.wrapTTL && { "x-vault-wrap-ttl": `${opts.wrapTTL}` }),
+                },
+            },
             body,
         );
     }
