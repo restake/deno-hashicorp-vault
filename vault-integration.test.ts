@@ -36,16 +36,20 @@ const hasRequiredPermissions = await (async () => {
 })();
 
 // Spawn Vault dev server
-const vaultAbort = new AbortController();
+let vaultAbort: AbortController | null = null;
 let vaultProcess: Deno.ChildProcess | null = null;
 
 function spawnVault() {
     if (vaultProcess !== null) {
         return;
     }
+    vaultAbort = new AbortController();
 
     const cmd = new Deno.Command("vault", {
         args: ["server", "-dev", "-dev-no-store-token", `-dev-root-token-id=${vaultToken}`],
+        env: {
+            "VAULT_LOG_LEVEL": "warn",
+        },
         signal: vaultAbort.signal,
         stdout: "inherit",
         stderr: "inherit",
@@ -57,8 +61,17 @@ function spawnVault() {
     });
 }
 
+async function disposeVault() {
+    if (vaultProcess && vaultAbort) {
+        vaultAbort.abort("test suite end");
+        await vaultProcess.output();
+    }
+    vaultProcess = null;
+    vaultAbort = null;
+}
+
 addEventListener("unload", () => {
-    vaultAbort.abort("test suite end");
+    disposeVault();
 });
 
 async function healthcheck(): Promise<boolean> {
@@ -74,28 +87,7 @@ async function healthcheck(): Promise<boolean> {
     return true;
 }
 
-async function ensureVaultReady() {
-    spawnVault();
-
-    // Ensure Vault is ready
-    let i = 0;
-    do {
-        try {
-            const ready = await healthcheck();
-            if (ready) {
-                return;
-            }
-        } catch (_e) {
-            console.log("Vault is not ready yet, sleeping");
-            await delay(1000);
-            i++;
-        }
-    } while (i <= 5);
-
-    throw new Error(`Vault is not ready after polling ${i} times`);
-}
-
-async function createVaultClient(): Promise<VaultClient<VaultTokenCredentials>> {
+async function createVaultClient(): Promise<{ client: VaultClient<VaultTokenCredentials>; dispose: () => Promise<void> }> {
     const authentication: VaultTokenCredentials = {
         [VAULT_AUTH_TYPE]: "token",
         mountpoint: "auth/token",
@@ -109,7 +101,34 @@ async function createVaultClient(): Promise<VaultClient<VaultTokenCredentials>> 
     });
 
     await client.login();
-    return client;
+    return {
+        client,
+        async dispose() {
+            await client.logout();
+            await disposeVault();
+        },
+    };
+}
+
+async function ensureVaultReady() {
+    spawnVault();
+
+    // Ensure Vault is ready
+    let i = 0;
+    do {
+        try {
+            const ready = await healthcheck();
+            if (ready) {
+                return createVaultClient();
+            }
+        } catch (_e) {
+            console.log("Vault is not ready yet, sleeping");
+            await delay(1000);
+            i++;
+        }
+    } while (i <= 5);
+
+    throw new Error(`Vault is not ready after polling ${i} times`);
 }
 
 async function withApproleClient(mountpoint: string, roleID: string, secretID?: string): Promise<VaultClient<VaultApproleCredentials>> {
@@ -131,7 +150,7 @@ async function withApproleClient(mountpoint: string, roleID: string, secretID?: 
 }
 
 async function withAuthMount<
-    C extends Awaited<ReturnType<typeof createVaultClient>>,
+    C extends Awaited<ReturnType<typeof createVaultClient>>["client"],
 >(client: C, path: string, type: string, fn: (client: C) => Promise<void>) {
     try {
         await client.write(undefined, `sys/auth/${path}`, { type });
@@ -143,7 +162,7 @@ async function withAuthMount<
 }
 
 async function withSecretMount<
-    C extends Awaited<ReturnType<typeof createVaultClient>>,
+    C extends Awaited<ReturnType<typeof createVaultClient>>["client"],
 >(client: C, path: string, type: string, fn: (client: C) => Promise<void>) {
     try {
         await client.write(undefined, `sys/mounts/${path}`, { type });
@@ -157,27 +176,20 @@ async function withSecretMount<
 Deno.test({
     name: "Issue new orphan token",
     ignore: !hasRequiredPermissions,
-    sanitizeOps: false,
-    sanitizeResources: false,
     async fn() {
-        await ensureVaultReady();
-
-        const client = await createVaultClient();
+        const { client, dispose } = await ensureVaultReady();
         const orphanToken = await client.issueToken();
 
         console.log("Issued new orphan token", orphanToken);
+        await dispose();
     },
 });
 
 Deno.test({
     name: "KV 1 engine read & write & list",
     ignore: !hasRequiredPermissions,
-    sanitizeOps: false,
-    sanitizeResources: false,
     async fn() {
-        await ensureVaultReady();
-
-        const client = await createVaultClient();
+        const { client, dispose } = await ensureVaultReady();
 
         await withSecretMount(client, "kv", "kv", async (client) => {
             const date = new Date().toISOString();
@@ -207,18 +219,16 @@ Deno.test({
                 assertEquals(secret.date, date);
             }
         });
+
+        await dispose();
     },
 });
 
 Deno.test({
     name: "KV 2 engine read & write & list",
     ignore: !hasRequiredPermissions,
-    sanitizeOps: false,
-    sanitizeResources: false,
     async fn() {
-        await ensureVaultReady();
-
-        const client = await createVaultClient();
+        const { client, dispose } = await ensureVaultReady();
 
         await withSecretMount(client, "kv", "kv-v2", async (client) => {
             const date = new Date().toISOString();
@@ -250,6 +260,8 @@ Deno.test({
                 assertEquals(secret.date, date);
             }
         });
+
+        await dispose();
     },
 });
 
@@ -259,9 +271,8 @@ Deno.test({
     sanitizeOps: false,
     sanitizeResources: false,
     async fn() {
-        await ensureVaultReady();
+        const { client: rootClient, dispose } = await ensureVaultReady();
 
-        const rootClient = await createVaultClient();
         await withAuthMount(rootClient, "approle", "approle", async (rootClient) => {
             const roleName = "integtest";
 
@@ -296,5 +307,7 @@ Deno.test({
                 await client.logout();
             }
         });
+
+        await dispose();
     },
 });
