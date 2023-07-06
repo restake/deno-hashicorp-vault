@@ -53,7 +53,7 @@ export function createReadResponse<T extends ZodType>(response: T) {
 
 export type ReadResponse<T extends ZodType> = z.infer<ReturnType<typeof createReadResponse<T>>>;
 
-function createKVReadResponse<T extends ZodType>(response: T) {
+export function createKVReadResponse<T extends ZodType>(response: T) {
     return createReadResponse(z.object({
         data: response,
     }));
