@@ -2,7 +2,7 @@ import { z } from "./deps.ts";
 
 import { assertEquals, delay } from "./deps_test.ts";
 
-import { VAULT_AUTH_TYPE, VaultTokenCredentials } from "./auth.ts";
+import { VAULT_AUTH_TYPE, VaultApproleCredentials, VaultTokenCredentials } from "./auth.ts";
 import { VaultClient } from "./client.ts";
 import { doVaultFetch } from "./vault.ts";
 import { createKVReadResponse, createReadResponse, KVListResponse } from "./types.ts";
@@ -112,6 +112,36 @@ async function createVaultClient(): Promise<VaultClient<VaultTokenCredentials>> 
     return client;
 }
 
+async function withApproleClient(mountpoint: string, roleID: string, secretID?: string): Promise<VaultClient<VaultApproleCredentials>> {
+    const authentication: VaultApproleCredentials = {
+        [VAULT_AUTH_TYPE]: "approle",
+        mountpoint,
+        roleID,
+        secretID,
+    };
+
+    const client = new VaultClient({
+        address: vaultAddress,
+        namespace: undefined,
+        authentication,
+    });
+
+    await client.login();
+    return client;
+}
+
+async function withAuthMount<
+    C extends Awaited<ReturnType<typeof createVaultClient>>,
+>(client: C, path: string, type: string, fn: (client: C) => Promise<void>) {
+    try {
+        await client.write(undefined, `sys/auth/${path}`, { type });
+
+        return await fn(client);
+    } finally {
+        await client.write(undefined, `sys/auth/${path}`, undefined, "DELETE");
+    }
+}
+
 async function withSecretMount<
     C extends Awaited<ReturnType<typeof createVaultClient>>,
 >(client: C, path: string, type: string, fn: (client: C) => Promise<void>) {
@@ -218,6 +248,52 @@ Deno.test({
                 const { data: { data: secret } } = await client.read(createKVReadResponse(secretStructure), `kv/data/testing/${i}`);
                 assertEquals(secret.value, `bar${i}`);
                 assertEquals(secret.date, date);
+            }
+        });
+    },
+});
+
+Deno.test({
+    name: "AppRole authentication",
+    ignore: !hasRequiredPermissions,
+    sanitizeOps: false,
+    sanitizeResources: false,
+    async fn() {
+        await ensureVaultReady();
+
+        const rootClient = await createVaultClient();
+        await withAuthMount(rootClient, "approle", "approle", async (rootClient) => {
+            const roleName = "integtest";
+
+            // Create approle
+            await rootClient.write(undefined, `auth/approle/role/${roleName}`, {
+                bind_secret_id: true,
+                secret_id_num_uses: 2,
+                token_max_ttl: "1h",
+                token_type: "batch",
+            });
+
+            // Obtain approle credentials
+            const { data: { role_id: roleId } } = await rootClient.read(
+                createReadResponse(
+                    z.object({ role_id: z.string() }),
+                ),
+                `auth/approle/role/${roleName}/role-id`,
+            );
+            const { data: { secret_id: secretId } } = await rootClient.write(
+                createReadResponse(
+                    z.object({ secret_id: z.string() }),
+                ),
+                `auth/approle/role/${roleName}/secret-id`,
+                {},
+            );
+
+            // Use approle client
+            const client = await withApproleClient("auth/approle", roleId, secretId);
+            try {
+                console.log("AppRole lookup", client.token, await client.lookup());
+            } finally {
+                await client.logout();
             }
         });
     },
