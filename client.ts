@@ -15,6 +15,11 @@ export class VaultClient<T extends VaultAuthentication> {
         this.credentials = credentials;
     }
 
+    get token(): string {
+        this.assertToken();
+        return this.currentToken!;
+    }
+
     async login(): Promise<void> {
         const authType = this.credentials.authentication[VAULT_AUTH_TYPE];
 
@@ -83,6 +88,8 @@ export class VaultClient<T extends VaultAuthentication> {
     }
 
     async lookup(accessor?: string): Promise<TokenLookupResponse> {
+        this.assertToken();
+
         const { address, namespace } = this.credentials;
         const res = await doVaultFetch(
             TokenLookupResponse,
@@ -138,6 +145,8 @@ export class VaultClient<T extends VaultAuthentication> {
     }
 
     async read<T extends ZodType, R = z.output<T>>(type: T, endpoint: string, method = "GET"): Promise<R> {
+        this.assertToken();
+
         const { address, namespace } = this.credentials;
 
         return await doVaultFetch(
@@ -154,6 +163,8 @@ export class VaultClient<T extends VaultAuthentication> {
         T extends ZodType | undefined,
         R extends (T extends ZodType ? z.output<T> : undefined),
     >(type: T, endpoint: string, body: unknown, method = "POST"): Promise<R> {
+        this.assertToken();
+
         const { address, namespace } = this.credentials;
 
         return await doVaultFetch(
