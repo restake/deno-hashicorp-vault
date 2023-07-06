@@ -1,10 +1,11 @@
 import { z } from "./deps.ts";
 
+import { assertEquals, delay } from "./deps_test.ts";
+
 import { VAULT_AUTH_TYPE, VaultTokenCredentials } from "./auth.ts";
 import { VaultClient } from "./client.ts";
 import { doVaultFetch } from "./vault.ts";
 import { createKVReadResponse, KVListResponse } from "./types.ts";
-import { assertEquals } from "https://deno.land/std@0.188.0/testing/asserts.ts";
 
 const _vaultAddr = "127.0.0.1:8200";
 const vaultAddress = `http://${_vaultAddr}`;
@@ -86,7 +87,7 @@ async function ensureVaultReady() {
             }
         } catch (_e) {
             console.log("Vault is not ready yet, sleeping");
-            await new Promise<void>((resolve) => setTimeout(() => resolve(), 1000));
+            await delay(1000);
             i++;
         }
     } while (i <= 5);
