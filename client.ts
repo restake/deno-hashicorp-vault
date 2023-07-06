@@ -1,4 +1,4 @@
-import type { ZodType, z } from "./deps.ts";
+import type { z, ZodType } from "./deps.ts";
 
 import { VAULT_AUTH_TYPE, VaultApproleCredentials, VaultAuthentication, VaultCredentials, VaultTokenCredentials } from "./auth.ts";
 import { LoginResponse, TokenLookupResponse } from "./types.ts";
@@ -136,7 +136,7 @@ export class VaultClient<T extends VaultAuthentication> {
         };
     }
 
-    async read<T extends ZodType, R = z.output<T>>(type: T, endpoint: string): Promise<R> {
+    async read<T extends ZodType, R = z.output<T>>(type: T, endpoint: string, method = "GET"): Promise<R> {
         const { address, namespace } = this.credentials;
 
         return await doVaultFetch(
@@ -145,11 +145,11 @@ export class VaultClient<T extends VaultAuthentication> {
             namespace,
             this.currentToken,
             endpoint,
-            { method: "GET" },
+            { method },
         );
     }
 
-    async write<T extends ZodType, R = z.output<T>>(type: T, endpoint: string, body: unknown): Promise<R> {
+    async write<T extends ZodType, R = z.output<T>>(type: T, endpoint: string, body: unknown, method = "POST"): Promise<R> {
         const { address, namespace } = this.credentials;
 
         return await doVaultFetch(
@@ -158,7 +158,7 @@ export class VaultClient<T extends VaultAuthentication> {
             namespace,
             this.currentToken,
             endpoint,
-            { method: "POST" },
+            { method },
             body,
         );
     }
