@@ -60,3 +60,7 @@ export function createKVReadResponse<T extends ZodType>(response: T) {
 }
 
 export type KVReadResponse<T extends ZodType> = z.infer<ReturnType<typeof createKVReadResponse<T>>>;
+
+export const KVListResponse = createReadResponse(z.object({ keys: z.array(z.string()) }));
+
+export type KVListResponse = z.infer<typeof KVListResponse>;
