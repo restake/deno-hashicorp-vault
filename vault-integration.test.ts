@@ -3,6 +3,8 @@ import { z } from "./deps.ts";
 import { VAULT_AUTH_TYPE, VaultTokenCredentials } from "./auth.ts";
 import { VaultClient } from "./client.ts";
 import { doVaultFetch } from "./vault.ts";
+import { createKVReadResponse, KVListResponse } from "./types.ts";
+import { assertEquals } from "https://deno.land/std@0.188.0/testing/asserts.ts";
 
 const _vaultAddr = "127.0.0.1:8200";
 const vaultAddress = `http://${_vaultAddr}`;
@@ -109,6 +111,18 @@ async function createVaultClient(): Promise<VaultClient<VaultTokenCredentials>> 
     return client;
 }
 
+async function withSecretMount<
+    C extends Awaited<ReturnType<typeof createVaultClient>>,
+>(client: C, path: string, type: string, fn: (client: C) => Promise<void>) {
+    try {
+        await client.write(undefined, `sys/mounts/${path}`, { type });
+
+        return await fn(client);
+    } finally {
+        await client.write(undefined, `sys/mounts/${path}`, undefined, "DELETE");
+    }
+}
+
 Deno.test({
     name: "Issue new orphan token",
     ignore: !hasRequiredPermissions,
@@ -121,5 +135,48 @@ Deno.test({
         const orphanToken = await client.issueToken();
 
         console.log("Issued new orphan token", orphanToken);
+    },
+});
+
+Deno.test({
+    name: "KV 2 engine read & write & list",
+    ignore: !hasRequiredPermissions,
+    sanitizeOps: false,
+    sanitizeResources: false,
+    async fn() {
+        await ensureVaultReady();
+
+        const client = await createVaultClient();
+
+        await withSecretMount(client, "kv", "kv-v2", async (client) => {
+            const date = new Date().toISOString();
+            const count = 5;
+
+            const secretStructure = z.object({
+                value: z.string(),
+                date: z.string(),
+            });
+
+            // Write a few secrets
+            for (let i = 0; i < count; i++) {
+                await client.write(z.any(), `kv/data/testing/${i}`, {
+                    data: {
+                        value: `bar${i}`,
+                        date,
+                    },
+                });
+            }
+
+            // List secrets
+            const { data: { keys: secrets } } = await client.read(KVListResponse, "kv/metadata/testing", "LIST");
+            assertEquals(secrets.length, count);
+
+            // Read secrets
+            for (let i = 0; i < count; i++) {
+                const { data: { data: secret } } = await client.read(createKVReadResponse(secretStructure), `kv/data/testing/${i}`);
+                assertEquals(secret.value, `bar${i}`);
+                assertEquals(secret.date, date);
+            }
+        });
     },
 });
