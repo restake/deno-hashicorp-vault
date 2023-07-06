@@ -4,24 +4,40 @@ import { VAULT_AUTH_TYPE, VaultTokenCredentials } from "./auth.ts";
 import { VaultClient } from "./client.ts";
 import { doVaultFetch } from "./vault.ts";
 
-const vaultAddress = "http://127.0.0.1:8200";
+const _vaultAddr = "127.0.0.1:8200";
+const vaultAddress = `http://${_vaultAddr}`;
 const vaultToken = "foobarbaz123";
 
-// Spawn Vault dev server
-const vaultAbort = new AbortController();
-// deno-lint-ignore no-unused-vars
-let vaultProcess: Deno.ChildProcess | null = null;
-let spawningAllowed = true;
-
-await (async () => {
-    const permission = await Deno.permissions.request({
+const hasRequiredPermissions = await (async () => {
+    const spawnPermission = await Deno.permissions.request({
         name: "run",
         command: "vault",
     });
 
-    if (permission.state !== "granted") {
+    if (spawnPermission.state !== "granted") {
         console.warn("Not allowed to spawn Vault dev server, skipping integration tests");
-        spawningAllowed = false;
+        return false;
+    }
+
+    const netPermission = await Deno.permissions.request({
+        name: "net",
+        host: _vaultAddr,
+    });
+
+    if (netPermission.state !== "granted") {
+        console.warn("Not allowed to connect to Vault dev server, skipping integration tests");
+        return false;
+    }
+
+    return true;
+})();
+
+// Spawn Vault dev server
+const vaultAbort = new AbortController();
+let vaultProcess: Deno.ChildProcess | null = null;
+
+function spawnVault() {
+    if (vaultProcess !== null) {
         return;
     }
 
@@ -36,7 +52,7 @@ await (async () => {
     process.output().then((result) => {
         console.log("Vault process exited", result);
     });
-})();
+}
 
 addEventListener("unload", () => {
     vaultAbort.abort("test suite end");
@@ -56,6 +72,8 @@ async function healthcheck(): Promise<boolean> {
 }
 
 async function ensureVaultReady() {
+    spawnVault();
+
     // Ensure Vault is ready
     let i = 0;
     do {
@@ -93,7 +111,9 @@ async function createVaultClient(): Promise<VaultClient<VaultTokenCredentials>> 
 
 Deno.test({
     name: "Issue new orphan token",
-    ignore: !spawningAllowed,
+    ignore: !hasRequiredPermissions,
+    sanitizeOps: false,
+    sanitizeResources: false,
     async fn() {
         await ensureVaultReady();
 
