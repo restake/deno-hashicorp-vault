@@ -5,7 +5,7 @@ import { assertEquals, delay } from "./deps_test.ts";
 import { VAULT_AUTH_TYPE, VaultApproleCredentials, VaultTokenCredentials } from "./auth.ts";
 import { VaultClient } from "./client.ts";
 import { doVaultFetch } from "./vault.ts";
-import { createKVReadResponse, createReadResponse, KVListResponse } from "./types.ts";
+import { createKVReadResponse, createReadResponse, KVListResponse, LoginResponse, WrapResponse } from "./types.ts";
 
 const _vaultAddr = "127.0.0.1:8200";
 const vaultAddress = `http://${_vaultAddr}`;
@@ -181,6 +181,31 @@ Deno.test({
         const orphanToken = await client.issueToken();
 
         console.log("Issued new orphan token", orphanToken);
+        await dispose();
+    },
+});
+
+Deno.test({
+    name: "Issue new response-wrapped orphan token",
+    ignore: !hasRequiredPermissions,
+    async fn() {
+        const { client, dispose } = await ensureVaultReady();
+
+        const wrappedOrphanToken = await client.write(WrapResponse, "auth/token/create", {
+            renewable: true,
+            period: 300,
+        }, {
+            wrapTTL: 30,
+        });
+
+        const { auth: { client_token } } = await client.unwrap(
+            LoginResponse,
+            wrappedOrphanToken.wrap_info.token,
+            "auth/token/create",
+        );
+
+        console.log("Unwrapped auth token", client_token);
+
         await dispose();
     },
 });
