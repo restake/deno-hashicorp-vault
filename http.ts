@@ -9,6 +9,15 @@ export async function fetchJSONOnlyOk<T = unknown>(response: Response): Promise<
     return response.json() as Promise<T>;
 }
 
+export async function fetchNoBody<T extends undefined>(response: Response): Promise<T> {
+    if (response.status !== 204) {
+        const body = await response.json();
+        throw new HTTPError(response.status, body);
+    }
+
+    return undefined as T;
+}
+
 export function fetchJSONZod<T extends ZodType, R extends z.output<T>>(validator: T): (response: Response) => Promise<R> {
     return (response) =>
         fetchJSONOnlyOk<unknown>(response)

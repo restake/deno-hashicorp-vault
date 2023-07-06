@@ -149,7 +149,10 @@ export class VaultClient<T extends VaultAuthentication> {
         );
     }
 
-    async write<T extends ZodType, R = z.output<T>>(type: T, endpoint: string, body: unknown, method = "POST"): Promise<R> {
+    async write<
+        T extends ZodType | undefined,
+        R extends (T extends ZodType ? z.output<T> : undefined),
+    >(type: T, endpoint: string, body: unknown, method = "POST"): Promise<R> {
         const { address, namespace } = this.credentials;
 
         return await doVaultFetch(
