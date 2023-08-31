@@ -266,10 +266,12 @@ export class VaultClient<T extends VaultAuthentication> {
 
     private createRenewTimer(leaseDuration: number) {
         const timeout = this.renewInterval(leaseDuration);
-        this.renewTimerHandle = setTimeout(() => {
+        const handle = this.renewTimerHandle = setTimeout(() => {
             this.renewTimer().then(({ lease_duration }) => {
                 this.createRenewTimer(lease_duration);
             });
         }, timeout);
+
+        Deno.unrefTimer(handle);
     }
 }
