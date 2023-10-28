@@ -1,6 +1,7 @@
 import { z, ZodType } from "./deps.ts";
 
 import { VAULT_AUTH_TYPE, VaultApproleCredentials, VaultAuthentication, VaultCredentials, VaultTokenCredentials } from "./auth.ts";
+import { HTTPError } from "./http.ts";
 import { createGenericResponse, LoginResponse, TokenLookupResponse } from "./types.ts";
 import { doVaultFetch } from "./vault.ts";
 
@@ -259,6 +260,12 @@ export class VaultClient<T extends VaultAuthentication> {
             this.currentTokenAccessor = accessor;
             return { lease_duration };
         } catch (e) {
+            if (e instanceof HTTPError) {
+                if (e.status === 403) {
+                    // We got "permission denied", rethrow
+                    throw e;
+                }
+            }
             console.error("[vault] Failed to renew lease, retrying next cycle", e);
             return { lease_duration: this.currentLeaseDuration };
         }
@@ -269,6 +276,8 @@ export class VaultClient<T extends VaultAuthentication> {
         const handle = this.renewTimerHandle = setTimeout(() => {
             this.renewTimer().then(({ lease_duration }) => {
                 this.createRenewTimer(lease_duration);
+            }).catch((e) => {
+                console.error("[vault] Failed to renew lease, canceling renewal timer", e);
             });
         }, timeout);
 
