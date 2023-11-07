@@ -336,4 +336,8 @@ export class VaultClient<T extends VaultAuthentication> {
 
         Deno.unrefTimer(handle);
     }
+
+    async [Symbol.asyncDispose](): Promise<void> {
+        return await this.logout();
+    }
 }
