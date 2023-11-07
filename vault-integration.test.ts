@@ -90,7 +90,7 @@ async function healthcheck(): Promise<boolean> {
     return true;
 }
 
-async function createVaultClient(): Promise<{ client: VaultClient<VaultTokenCredentials>; dispose: () => Promise<void> }> {
+async function createVaultClient() {
     const authentication: VaultTokenCredentials = {
         [VAULT_AUTH_TYPE]: "token",
         mountpoint: "auth/token",
@@ -106,7 +106,7 @@ async function createVaultClient(): Promise<{ client: VaultClient<VaultTokenCred
     await client.login();
     return {
         client,
-        async dispose() {
+        [Symbol.asyncDispose]: async () => {
             await client.logout();
             await disposeVault();
         },
@@ -180,11 +180,10 @@ Deno.test({
     name: "Issue new orphan token",
     ignore: !hasRequiredPermissions,
     async fn() {
-        const { client, dispose } = await ensureVaultReady();
-        const orphanToken = await client.issueToken();
+        await using vault = await ensureVaultReady();
+        const orphanToken = await vault.client.issueToken();
 
         console.log("Issued new orphan token", orphanToken);
-        await dispose();
     },
 });
 
@@ -192,24 +191,22 @@ Deno.test({
     name: "Issue new response-wrapped orphan token",
     ignore: !hasRequiredPermissions,
     async fn() {
-        const { client, dispose } = await ensureVaultReady();
+        await using vault = await ensureVaultReady();
 
-        const wrappedOrphanToken = await client.write(WrapResponse, "auth/token/create", {
+        const wrappedOrphanToken = await vault.client.write(WrapResponse, "auth/token/create", {
             renewable: true,
             period: 300,
         }, {
             wrapTTL: 30,
         });
 
-        const { auth: { client_token } } = await client.unwrap(
+        const { auth: { client_token } } = await vault.client.unwrap(
             LoginResponse,
             wrappedOrphanToken.wrap_info.token,
             "auth/token/create",
         );
 
         console.log("Unwrapped auth token", client_token);
-
-        await dispose();
     },
 });
 
@@ -217,9 +214,9 @@ Deno.test({
     name: "KV 1 engine read & write & list",
     ignore: !hasRequiredPermissions,
     async fn() {
-        const { client, dispose } = await ensureVaultReady();
+        await using vault = await ensureVaultReady();
 
-        await withSecretMount(client, "kv", "kv", async (client) => {
+        await withSecretMount(vault.client, "kv", "kv", async (client) => {
             const date = new Date().toISOString();
             const count = 5;
 
@@ -247,8 +244,6 @@ Deno.test({
                 assertEquals(secret.date, date);
             }
         });
-
-        await dispose();
     },
 });
 
@@ -256,9 +251,9 @@ Deno.test({
     name: "KV 2 engine read & write & list",
     ignore: !hasRequiredPermissions,
     async fn() {
-        const { client, dispose } = await ensureVaultReady();
+        await using vault = await ensureVaultReady();
 
-        await withSecretMount(client, "kv", "kv-v2", async (client) => {
+        await withSecretMount(vault.client, "kv", "kv-v2", async (client) => {
             const date = new Date().toISOString();
             const count = 5;
 
@@ -288,8 +283,6 @@ Deno.test({
                 assertEquals(secret.date, date);
             }
         });
-
-        await dispose();
     },
 });
 
@@ -297,9 +290,9 @@ Deno.test({
     name: "AppRole authentication",
     ignore: !hasRequiredPermissions,
     async fn() {
-        const { client: rootClient, dispose } = await ensureVaultReady();
+        await using rootVault = await ensureVaultReady();
 
-        await withAuthMount(rootClient, "approle", "approle", async (rootClient) => {
+        await withAuthMount(rootVault.client, "approle", "approle", async (rootClient) => {
             const roleName = "integtest";
 
             // Create approle
@@ -326,15 +319,9 @@ Deno.test({
             );
 
             // Use approle client
-            const client = await withApproleClient("auth/approle", roleId, secretId);
-            try {
-                console.log("AppRole lookup", client.token, await client.lookup());
-            } finally {
-                await client.logout();
-            }
+            await using client = await withApproleClient("auth/approle", roleId, secretId);
+            console.log("AppRole lookup", client.token, await client.lookup());
         });
-
-        await dispose();
     },
 });
 
@@ -342,7 +329,7 @@ Deno.test({
     name: "Aborted request",
     ignore: !hasRequiredPermissions,
     async fn() {
-        const { client, dispose } = await ensureVaultReady();
+        await using vault = await ensureVaultReady();
 
         const abortController = new AbortController();
         const { signal } = abortController;
@@ -351,38 +338,36 @@ Deno.test({
         abortController.abort(msg);
 
         await assertRejects(async () => {
-            await client.login({ signal });
+            await vault.client.login({ signal });
         }, msg);
 
         await assertRejects(async () => {
-            await client.approleLogin({ signal });
+            await vault.client.approleLogin({ signal });
         }, msg);
 
         await assertRejects(async () => {
-            await client.lookup(undefined, { signal });
+            await vault.client.lookup(undefined, { signal });
         }, msg);
 
         await assertRejects(async () => {
-            await client.renewToken(undefined, { signal });
+            await vault.client.renewToken(undefined, { signal });
         }, msg);
 
         await assertRejects(async () => {
-            await client.issueToken(undefined, { signal });
+            await vault.client.issueToken(undefined, { signal });
         }, msg);
 
         await assertRejects(async () => {
-            await client.read(z.any(), "sys/health", { signal });
+            await vault.client.read(z.any(), "sys/health", { signal });
         }, msg);
 
         await assertRejects(async () => {
-            await client.write(z.any(), "dummy", undefined, { signal });
+            await vault.client.write(z.any(), "dummy", undefined, { signal });
         }, msg);
 
         await assertRejects(async () => {
-            await client.unwrap(z.any(), "dummy", undefined, { signal });
+            await vault.client.unwrap(z.any(), "dummy", undefined, { signal });
         }, msg);
-
-        await dispose();
     },
 });
 
@@ -390,16 +375,14 @@ Deno.test({
     name: "Path in HTTPError",
     ignore: !hasRequiredPermissions,
     async fn() {
-        const { client, dispose } = await ensureVaultReady();
+        await using vault = await ensureVaultReady();
 
         const error = await assertRejects(async () => {
-            await client.read(z.any(), "non/existent/path");
+            await vault.client.read(z.any(), "non/existent/path");
         });
 
         assert(error instanceof HTTPError, "error must've been an instance of HTTPError");
         assertEquals(error.status, 404);
         assertEquals(error.path, "/v1/non/existent/path");
-
-        await dispose();
     },
 });
