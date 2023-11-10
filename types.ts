@@ -7,6 +7,13 @@ export const ErrorResponse = z.object({
 
 export type ErrorResponse = z.infer<typeof ErrorResponse>;
 
+export const TokenType = z.enum([
+    "batch",
+    "service",
+]);
+
+export type TokenType = z.infer<typeof TokenType>;
+
 export const AuthData = z.object({
     client_token: z.string(),
     accessor: z.string(),
@@ -14,6 +21,7 @@ export const AuthData = z.object({
     token_policies: z.array(z.string()),
     lease_duration: z.number(),
     renewable: z.boolean(),
+    token_type: TokenType,
 });
 
 export type AuthData = z.infer<typeof AuthData>;
@@ -28,6 +36,7 @@ export const TokenLookupResponse = createGenericResponse(z.object({
     accessor: z.string(),
     renewable: z.boolean(),
     ttl: z.number(),
+    type: TokenType,
 }));
 
 export type TokenLookupResponse = z.infer<typeof TokenLookupResponse>;
