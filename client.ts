@@ -8,6 +8,12 @@ import { doVaultFetch } from "./vault.ts";
 export type VaultRequestOptions = {
     method?: string;
     wrapTTL?: number | string;
+    signal?: AbortSignal;
+};
+
+export type VaultTokenInfo = {
+    token: string;
+    accessor: string;
 };
 
 export class VaultClient<T extends VaultAuthentication> {
@@ -22,16 +28,28 @@ export class VaultClient<T extends VaultAuthentication> {
     }
 
     get token(): string {
-        this.assertToken();
-        return this.currentToken!;
+        return this.tokenInfo.token;
     }
 
-    get accessor(): string {
-        this.assertToken();
-        return this.currentTokenAccessor!;
+    get accessor(): string | undefined {
+        return this.tokenInfo.accessor;
     }
 
-    async login(): Promise<void> {
+    get tokenInfo(): VaultTokenInfo {
+        const token = this.currentToken;
+        const accessor = this.currentTokenAccessor;
+
+        if (token === undefined || accessor === undefined) {
+            throw new Error("No valid token available");
+        }
+
+        return {
+            token,
+            accessor,
+        };
+    }
+
+    async login(opts?: Pick<VaultRequestOptions, "signal">): Promise<void> {
         const authType = this.credentials.authentication[VAULT_AUTH_TYPE];
 
         this.currentLeaseDuration = 0;
@@ -39,7 +57,7 @@ export class VaultClient<T extends VaultAuthentication> {
 
         switch (authType) {
             case "approle": {
-                const { client_token, accessor, lease_duration, renewable } = await this.approleLogin();
+                const { client_token, accessor, lease_duration, renewable } = await this.approleLogin(opts);
                 this.currentToken = client_token;
                 this.currentTokenAccessor = accessor;
 
@@ -51,7 +69,7 @@ export class VaultClient<T extends VaultAuthentication> {
                 const tokenCredentials = this.credentials.authentication as unknown as VaultTokenCredentials;
                 this.currentToken = tokenCredentials.token;
 
-                const { data: { accessor, renewable, ttl } } = await this.lookup();
+                const { data: { accessor, renewable, ttl } } = await this.lookup(undefined, opts);
                 this.currentTokenAccessor = accessor;
 
                 this.currentLeaseDuration = ttl;
@@ -75,7 +93,9 @@ export class VaultClient<T extends VaultAuthentication> {
         }
     }
 
-    async approleLogin(): Promise<{ client_token: string; accessor: string; lease_duration: number; renewable: boolean }> {
+    async approleLogin(
+        opts?: Pick<VaultRequestOptions, "signal">,
+    ): Promise<{ client_token: string; accessor: string; lease_duration: number; renewable: boolean }> {
         const authType = this.credentials.authentication[VAULT_AUTH_TYPE];
         if (authType !== "approle") {
             throw new Error(`approleLogin cannot be used with authentication type "${authType}"`);
@@ -88,7 +108,7 @@ export class VaultClient<T extends VaultAuthentication> {
         const res = await doVaultFetch(LoginResponse, address, namespace, undefined, `${mountpoint}/login`, { method: "POST" }, {
             role_id: roleID,
             secret_id: secretID,
-        });
+        }, opts?.signal);
 
         return {
             client_token: res.auth.client_token,
@@ -98,36 +118,48 @@ export class VaultClient<T extends VaultAuthentication> {
         };
     }
 
-    async lookup(accessor?: string): Promise<TokenLookupResponse> {
-        this.assertToken();
+    async lookup(
+        accessor?: string,
+        opts?: Pick<VaultRequestOptions, "signal">,
+    ): Promise<TokenLookupResponse> {
+        // This is called inside login(), where we might not have accessor available
+        // So check only for token presence
+        const token = this.currentToken;
+        if (token === undefined) {
+            throw new Error("No valid token available");
+        }
 
         const { address, namespace } = this.credentials;
         const res = await doVaultFetch(
             TokenLookupResponse,
             address,
             namespace,
-            this.currentToken,
+            token,
             `auth/token/lookup` + (accessor ? "-accessor" : "-self"),
             { method: accessor ? "POST" : "GET" },
             accessor ? { accessor } : undefined,
+            opts?.signal,
         );
 
         return res;
     }
 
-    async renewToken(accessor?: string): Promise<{ accessor: string; lease_duration: number }> {
-        this.assertToken();
-
+    async renewToken(
+        accessor?: string,
+        opts?: Pick<VaultRequestOptions, "signal">,
+    ): Promise<{ accessor: string; lease_duration: number }> {
+        const { token } = this.tokenInfo;
         const { address, namespace } = this.credentials;
 
         const res = await doVaultFetch(
             LoginResponse,
             address,
             namespace,
-            this.currentToken,
+            token,
             "auth/token/renew" + (accessor ? "-accessor" : "-self"),
             { method: "POST" },
             accessor ? { accessor } : undefined,
+            opts?.signal,
         );
 
         return {
@@ -138,15 +170,24 @@ export class VaultClient<T extends VaultAuthentication> {
 
     async issueToken(
         role?: string,
+        opts?: Pick<VaultRequestOptions, "signal">,
     ): Promise<{ client_token: string; accessor: string; lease_duration: number }> {
-        this.assertToken();
-
+        const { token } = this.tokenInfo;
         const { address, namespace } = this.credentials;
 
         const endpoint = `auth/token/create` + (role ? `/${role}` : "");
-        const res = await doVaultFetch(LoginResponse, address, namespace, this.currentToken, endpoint, {
-            method: "POST",
-        });
+        const res = await doVaultFetch(
+            LoginResponse,
+            address,
+            namespace,
+            token,
+            endpoint,
+            {
+                method: "POST",
+            },
+            undefined,
+            opts?.signal,
+        );
 
         return {
             client_token: res.auth.client_token,
@@ -158,16 +199,19 @@ export class VaultClient<T extends VaultAuthentication> {
     async read<
         T extends ZodType,
         R = z.output<T>,
-    >(type: T, endpoint: string, opts?: VaultRequestOptions): Promise<R> {
-        this.assertToken();
-
+    >(
+        type: T,
+        endpoint: string,
+        opts?: VaultRequestOptions,
+    ): Promise<R> {
+        const { token } = this.tokenInfo;
         const { address, namespace } = this.credentials;
 
         return await doVaultFetch(
             type,
             address,
             namespace,
-            this.currentToken,
+            token,
             endpoint,
             {
                 method: opts?.method ?? "GET",
@@ -175,22 +219,28 @@ export class VaultClient<T extends VaultAuthentication> {
                     ...(opts?.wrapTTL && { "x-vault-wrap-ttl": `${opts.wrapTTL}` }),
                 },
             },
+            undefined,
+            opts?.signal,
         );
     }
 
     async write<
         T extends ZodType | undefined,
         R extends (T extends ZodType ? z.output<T> : undefined),
-    >(type: T, endpoint: string, body: unknown, opts?: VaultRequestOptions): Promise<R> {
-        this.assertToken();
-
+    >(
+        type: T,
+        endpoint: string,
+        body: unknown,
+        opts?: VaultRequestOptions,
+    ): Promise<R> {
+        const { token } = this.tokenInfo;
         const { address, namespace } = this.credentials;
 
         return await doVaultFetch(
             type,
             address,
             namespace,
-            this.currentToken,
+            token,
             endpoint,
             {
                 method: opts?.method ?? "POST",
@@ -199,13 +249,19 @@ export class VaultClient<T extends VaultAuthentication> {
                 },
             },
             body,
+            opts?.signal,
         );
     }
 
     async unwrap<
         T extends ZodType,
         R = z.output<T>,
-    >(type: T, wrappingToken: string, expectedCreationPath?: string): Promise<R> {
+    >(
+        type: T,
+        wrappingToken: string,
+        expectedCreationPath?: string,
+        opts?: Pick<VaultRequestOptions, "signal">,
+    ): Promise<R> {
         const { address, namespace } = this.credentials;
 
         // Check creation path, if specified
@@ -222,6 +278,7 @@ export class VaultClient<T extends VaultAuthentication> {
                 {
                     token: wrappingToken,
                 },
+                opts?.signal,
             );
 
             if (expectedCreationPath !== creationData.creation_path) {
@@ -238,13 +295,9 @@ export class VaultClient<T extends VaultAuthentication> {
             {
                 method: "POST",
             },
+            undefined,
+            opts?.signal,
         );
-    }
-
-    private assertToken() {
-        if (!this.currentToken) {
-            throw new Error("No valid token available");
-        }
     }
 
     // Returns renew interval in milliseconds minus buffer

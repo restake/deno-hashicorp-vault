@@ -10,6 +10,7 @@ function buildVaultRequest(
     endpoint: string,
     opts?: RequestInit,
     body?: unknown,
+    signal?: AbortSignal,
 ): Promise<Response> {
     const url = new URL(`/v1/${endpoint}`, vaultAddr);
     const headers: Headers = new Headers(opts?.headers);
@@ -30,6 +31,7 @@ function buildVaultRequest(
         ...opts,
         headers,
         body: (!opts?.body && body && (opts?.method ?? "GET") !== "GET") ? JSON.stringify(body) : opts?.body,
+        signal,
     });
 }
 
@@ -41,6 +43,7 @@ export async function doVaultFetch<T extends ZodType | undefined, R extends (T e
     endpoint: string,
     opts?: RequestInit,
     body?: unknown,
+    signal?: AbortSignal,
 ): Promise<R> {
     const response = await buildVaultRequest(
         vaultAddr,
@@ -49,6 +52,7 @@ export async function doVaultFetch<T extends ZodType | undefined, R extends (T e
         endpoint,
         opts,
         body,
+        signal,
     );
 
     if (validator === undefined) {

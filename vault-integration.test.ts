@@ -1,6 +1,6 @@
 import { z } from "./deps.ts";
 
-import { assertEquals, delay } from "./deps_test.ts";
+import { assertEquals, assertRejects, delay } from "./deps_test.ts";
 
 import { VAULT_AUTH_TYPE, VaultApproleCredentials, VaultTokenCredentials } from "./auth.ts";
 import { VaultClient } from "./client.ts";
@@ -82,6 +82,8 @@ async function healthcheck(): Promise<boolean> {
         undefined,
         "sys/health",
         { method: "GET" },
+        undefined,
+        vaultAbort?.signal,
     );
 
     return true;
@@ -330,6 +332,54 @@ Deno.test({
                 await client.logout();
             }
         });
+
+        await dispose();
+    },
+});
+
+Deno.test({
+    name: "Aborted request",
+    ignore: !hasRequiredPermissions,
+    async fn() {
+        const { client, dispose } = await ensureVaultReady();
+
+        const abortController = new AbortController();
+        const { signal } = abortController;
+
+        const msg = "aborted for unit testing purposes";
+        abortController.abort(msg);
+
+        await assertRejects(async () => {
+            await client.login({ signal });
+        }, msg);
+
+        await assertRejects(async () => {
+            await client.approleLogin({ signal });
+        }, msg);
+
+        await assertRejects(async () => {
+            await client.lookup(undefined, { signal });
+        }, msg);
+
+        await assertRejects(async () => {
+            await client.renewToken(undefined, { signal });
+        }, msg);
+
+        await assertRejects(async () => {
+            await client.issueToken(undefined, { signal });
+        }, msg);
+
+        await assertRejects(async () => {
+            await client.read(z.any(), "sys/health", { signal });
+        }, msg);
+
+        await assertRejects(async () => {
+            await client.write(z.any(), "dummy", undefined, { signal });
+        }, msg);
+
+        await assertRejects(async () => {
+            await client.unwrap(z.any(), "dummy", undefined, { signal });
+        }, msg);
 
         await dispose();
     },
