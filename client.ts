@@ -11,6 +11,11 @@ export type VaultRequestOptions = {
     signal?: AbortSignal;
 };
 
+export type VaultTokenInfo = {
+    token: string;
+    accessor: string;
+};
+
 export class VaultClient<T extends VaultAuthentication> {
     private credentials: VaultCredentials<T>;
     private currentToken: string | undefined;
@@ -23,13 +28,25 @@ export class VaultClient<T extends VaultAuthentication> {
     }
 
     get token(): string {
-        this.assertToken();
-        return this.currentToken!;
+        return this.tokenInfo.token;
     }
 
-    get accessor(): string {
-        this.assertToken();
-        return this.currentTokenAccessor!;
+    get accessor(): string | undefined {
+        return this.tokenInfo.accessor;
+    }
+
+    get tokenInfo(): VaultTokenInfo {
+        const token = this.currentToken;
+        const accessor = this.currentTokenAccessor;
+
+        if (token === undefined || accessor === undefined) {
+            throw new Error("No valid token available");
+        }
+
+        return {
+            token,
+            accessor,
+        };
     }
 
     async login(opts?: Pick<VaultRequestOptions, "signal">): Promise<void> {
@@ -105,14 +122,19 @@ export class VaultClient<T extends VaultAuthentication> {
         accessor?: string,
         opts?: Pick<VaultRequestOptions, "signal">,
     ): Promise<TokenLookupResponse> {
-        this.assertToken();
+        // This is called inside login(), where we might not have accessor available
+        // So check only for token presence
+        const token = this.currentToken;
+        if (token === undefined) {
+            throw new Error("No valid token available");
+        }
 
         const { address, namespace } = this.credentials;
         const res = await doVaultFetch(
             TokenLookupResponse,
             address,
             namespace,
-            this.currentToken,
+            token,
             `auth/token/lookup` + (accessor ? "-accessor" : "-self"),
             { method: accessor ? "POST" : "GET" },
             accessor ? { accessor } : undefined,
@@ -126,15 +148,14 @@ export class VaultClient<T extends VaultAuthentication> {
         accessor?: string,
         opts?: Pick<VaultRequestOptions, "signal">,
     ): Promise<{ accessor: string; lease_duration: number }> {
-        this.assertToken();
-
+        const { token } = this.tokenInfo;
         const { address, namespace } = this.credentials;
 
         const res = await doVaultFetch(
             LoginResponse,
             address,
             namespace,
-            this.currentToken,
+            token,
             "auth/token/renew" + (accessor ? "-accessor" : "-self"),
             { method: "POST" },
             accessor ? { accessor } : undefined,
@@ -151,8 +172,7 @@ export class VaultClient<T extends VaultAuthentication> {
         role?: string,
         opts?: Pick<VaultRequestOptions, "signal">,
     ): Promise<{ client_token: string; accessor: string; lease_duration: number }> {
-        this.assertToken();
-
+        const { token } = this.tokenInfo;
         const { address, namespace } = this.credentials;
 
         const endpoint = `auth/token/create` + (role ? `/${role}` : "");
@@ -160,7 +180,7 @@ export class VaultClient<T extends VaultAuthentication> {
             LoginResponse,
             address,
             namespace,
-            this.currentToken,
+            token,
             endpoint,
             {
                 method: "POST",
@@ -184,15 +204,14 @@ export class VaultClient<T extends VaultAuthentication> {
         endpoint: string,
         opts?: VaultRequestOptions,
     ): Promise<R> {
-        this.assertToken();
-
+        const { token } = this.tokenInfo;
         const { address, namespace } = this.credentials;
 
         return await doVaultFetch(
             type,
             address,
             namespace,
-            this.currentToken,
+            token,
             endpoint,
             {
                 method: opts?.method ?? "GET",
@@ -214,15 +233,14 @@ export class VaultClient<T extends VaultAuthentication> {
         body: unknown,
         opts?: VaultRequestOptions,
     ): Promise<R> {
-        this.assertToken();
-
+        const { token } = this.tokenInfo;
         const { address, namespace } = this.credentials;
 
         return await doVaultFetch(
             type,
             address,
             namespace,
-            this.currentToken,
+            token,
             endpoint,
             {
                 method: opts?.method ?? "POST",
@@ -280,12 +298,6 @@ export class VaultClient<T extends VaultAuthentication> {
             undefined,
             opts?.signal,
         );
-    }
-
-    private assertToken() {
-        if (!this.currentToken) {
-            throw new Error("No valid token available");
-        }
     }
 
     // Returns renew interval in milliseconds minus buffer
