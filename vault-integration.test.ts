@@ -106,7 +106,7 @@ async function createVaultClient() {
     return {
         client,
         [Symbol.asyncDispose]: async () => {
-            await client.logout();
+            await client.logout({ revokeHardFail: true });
             await disposeVault();
         },
     };
@@ -137,6 +137,7 @@ async function withApproleClient(mountpoint: string, roleID: string, secretID?: 
     const authentication: VaultApproleCredentials = {
         [VAULT_AUTH_TYPE]: "approle",
         mountpoint,
+        logoutRevoke: true,
         roleID,
         secretID,
     };

@@ -3,6 +3,8 @@ export const VAULT_AUTH_TYPE = Symbol.for("restake.vault.auth");
 export type VaultAuthentication = {
     [VAULT_AUTH_TYPE]: string;
     mountpoint: string;
+    // Whether to revoke token on logout call / client dispose
+    logoutRevoke?: boolean;
 };
 
 export type VaultCredentials<T extends VaultAuthentication = VaultAuthentication> = {
