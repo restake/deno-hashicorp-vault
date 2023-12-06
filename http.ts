@@ -3,16 +3,14 @@ import type { ZodType } from "./deps.ts";
 
 export async function fetchJSONOnlyOk<T = unknown>(response: Response): Promise<T> {
     if (!response.ok) {
-        const body = await response.json();
-        throw new HTTPError(response.status, body);
+        throw await HTTPError.fromResponse(response);
     }
     return response.json() as Promise<T>;
 }
 
 export async function fetchNoBody<T extends undefined>(response: Response): Promise<T> {
     if (response.status !== 204) {
-        const body = await response.json();
-        throw new HTTPError(response.status, body);
+        throw await HTTPError.fromResponse(response);
     }
 
     return undefined as T;
@@ -27,17 +25,27 @@ export function fetchJSONZod<T extends ZodType, R extends z.output<T>>(validator
 export class HTTPError extends Error {
     readonly name = "HTTPError";
     readonly status: number;
-    readonly body: unknown;
+    readonly path: string;
+    readonly body: unknown | undefined;
 
     // deno-lint-ignore no-explicit-any
-    constructor(status: number, body: unknown, ...params: any[]) {
+    constructor(status: number, path: string, body: unknown | undefined, ...params: any[]) {
         super(...params);
         this.status = status;
+        this.path = path;
         this.body = body;
     }
 
     get message(): string {
         const body = JSON.stringify(this.body);
-        return `Server responded with code ${this.status}: ${body}`;
+        return `Server responded with code ${this.status}${body ? `: ${body}` : ""}`;
+    }
+
+    static async fromResponse(response: Response): Promise<HTTPError> {
+        const url = new URL(response.url);
+        const body = response.body !== null ? await response.json() : undefined;
+        const { status } = response;
+
+        return new HTTPError(status, url.pathname, body);
     }
 }

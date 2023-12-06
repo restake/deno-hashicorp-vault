@@ -1,9 +1,10 @@
 import { z } from "./deps.ts";
 
-import { assertEquals, assertRejects, delay } from "./deps_test.ts";
+import { assert, assertEquals, assertRejects, delay } from "./deps_test.ts";
 
-import { VAULT_AUTH_TYPE, VaultApproleCredentials, VaultTokenCredentials } from "./auth.ts";
 import { VaultClient } from "./client.ts";
+import { VAULT_AUTH_TYPE, VaultApproleCredentials, VaultTokenCredentials } from "./auth.ts";
+import { HTTPError } from "./http.ts";
 import { doVaultFetch } from "./vault.ts";
 import { createKVReadResponse, createReadResponse, KVListResponse, LoginResponse, WrapResponse } from "./types.ts";
 
@@ -380,6 +381,24 @@ Deno.test({
         await assertRejects(async () => {
             await client.unwrap(z.any(), "dummy", undefined, { signal });
         }, msg);
+
+        await dispose();
+    },
+});
+
+Deno.test({
+    name: "Path in HTTPError",
+    ignore: !hasRequiredPermissions,
+    async fn() {
+        const { client, dispose } = await ensureVaultReady();
+
+        const error = await assertRejects(async () => {
+            await client.read(z.any(), "non/existent/path");
+        });
+
+        assert(error instanceof HTTPError, "error must've been an instance of HTTPError");
+        assertEquals(error.status, 404);
+        assertEquals(error.path, "/v1/non/existent/path");
 
         await dispose();
     },
