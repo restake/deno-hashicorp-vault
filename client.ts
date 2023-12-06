@@ -2,7 +2,7 @@ import { z, ZodType } from "./deps.ts";
 
 import { VAULT_AUTH_TYPE, VaultApproleCredentials, VaultAuthentication, VaultCredentials, VaultTokenCredentials } from "./auth.ts";
 import { HTTPError } from "./http.ts";
-import { createGenericResponse, LoginResponse, TokenLookupResponse } from "./types.ts";
+import { createGenericResponse, LoginResponse, TokenLookupResponse, TokenType } from "./types.ts";
 import { doVaultFetch } from "./vault.ts";
 
 export type VaultRequestOptions = {
@@ -22,6 +22,7 @@ export class VaultClient<T extends VaultAuthentication> {
     private currentTokenAccessor: string | undefined;
     private currentLeaseDuration = 0;
     private renewTimerHandle: number | undefined;
+    private canRevoke = true;
 
     constructor(credentials: VaultCredentials<T>) {
         this.credentials = credentials;
@@ -57,9 +58,10 @@ export class VaultClient<T extends VaultAuthentication> {
 
         switch (authType) {
             case "approle": {
-                const { client_token, accessor, lease_duration, renewable } = await this.approleLogin(opts);
+                const { client_token, accessor, lease_duration, renewable, type } = await this.approleLogin(opts);
                 this.currentToken = client_token;
                 this.currentTokenAccessor = accessor;
+                this.canRevoke = type === "service";
 
                 this.currentLeaseDuration = lease_duration;
                 isRenewable = renewable && accessor !== "";
@@ -69,8 +71,9 @@ export class VaultClient<T extends VaultAuthentication> {
                 const tokenCredentials = this.credentials.authentication as unknown as VaultTokenCredentials;
                 this.currentToken = tokenCredentials.token;
 
-                const { data: { accessor, renewable, ttl } } = await this.lookup(undefined, opts);
+                const { data: { accessor, renewable, ttl, type } } = await this.lookup(undefined, opts);
                 this.currentTokenAccessor = accessor;
+                this.canRevoke = type === "service";
 
                 this.currentLeaseDuration = ttl;
                 isRenewable = renewable && accessor !== "";
@@ -86,16 +89,32 @@ export class VaultClient<T extends VaultAuthentication> {
         }
     }
 
-    // deno-lint-ignore require-await
-    async logout(): Promise<void> {
+    async logout(
+        opts?: Pick<VaultRequestOptions, "signal"> & { revokeHardFail?: boolean },
+    ): Promise<void> {
         if (this.renewTimerHandle) {
             clearTimeout(this.renewTimerHandle);
+        }
+
+        if (this.credentials.authentication.logoutRevoke && this.canRevoke) {
+            await this.write(
+                undefined,
+                "auth/token/revoke-self",
+                undefined,
+                opts,
+            ).catch((err) => {
+                if (opts?.revokeHardFail) {
+                    throw err;
+                }
+
+                console.error("[vault] Failed revoke self token", err);
+            });
         }
     }
 
     async approleLogin(
         opts?: Pick<VaultRequestOptions, "signal">,
-    ): Promise<{ client_token: string; accessor: string; lease_duration: number; renewable: boolean }> {
+    ): Promise<{ client_token: string; accessor: string; lease_duration: number; renewable: boolean; type: TokenType }> {
         const authType = this.credentials.authentication[VAULT_AUTH_TYPE];
         if (authType !== "approle") {
             throw new Error(`approleLogin cannot be used with authentication type "${authType}"`);
@@ -115,6 +134,7 @@ export class VaultClient<T extends VaultAuthentication> {
             accessor: res.auth.accessor,
             lease_duration: res.auth.lease_duration,
             renewable: res.auth.renewable,
+            type: res.auth.token_type,
         };
     }
 
@@ -335,5 +355,9 @@ export class VaultClient<T extends VaultAuthentication> {
         }, timeout);
 
         Deno.unrefTimer(handle);
+    }
+
+    async [Symbol.asyncDispose](): Promise<void> {
+        return await this.logout();
     }
 }
