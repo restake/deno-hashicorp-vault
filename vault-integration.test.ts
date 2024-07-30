@@ -101,6 +101,8 @@ async function createVaultClient() {
         address: vaultAddress,
         namespace: undefined,
         authentication,
+        // Force dispose usage
+        enableRenewalTimer: true,
     });
 
     await client.login();
@@ -147,6 +149,8 @@ async function withApproleClient(mountpoint: string, roleID: string, secretID?: 
         address: vaultAddress,
         namespace: undefined,
         authentication,
+        // Force dispose usage
+        enableRenewalTimer: true,
     });
 
     await client.login();
