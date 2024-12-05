@@ -23,7 +23,7 @@ export function fetchJSONZod<T extends ZodType, R extends z.output<T>>(validator
 }
 
 export class HTTPError extends Error {
-    readonly name = "HTTPError";
+    override readonly name = "HTTPError";
     readonly status: number;
     readonly path: string;
     readonly body: unknown | undefined;
@@ -36,7 +36,7 @@ export class HTTPError extends Error {
         this.body = body;
     }
 
-    get message(): string {
+    override get message(): string {
         const body = JSON.stringify(this.body);
         return `Server responded with code ${this.status}${body ? `: ${body}` : ""}`;
     }
