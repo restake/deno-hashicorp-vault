@@ -13,7 +13,7 @@ export type VaultRequestOptions = {
 
 export type VaultTokenInfo = {
     token: string;
-    accessor: string;
+    accessor?: string;
 };
 
 export type VaultClientOptions = {
@@ -44,7 +44,7 @@ export class VaultClient<T extends VaultAuthentication> {
         const token = this.currentToken;
         const accessor = this.currentTokenAccessor;
 
-        if (token === undefined || accessor === undefined) {
+        if (token === undefined) {
             throw new Error("No valid token available");
         }
 
@@ -68,7 +68,7 @@ export class VaultClient<T extends VaultAuthentication> {
                 this.canRevoke = type === "service";
 
                 this.currentLeaseDuration = lease_duration;
-                isRenewable = renewable && accessor !== "";
+                isRenewable = renewable && !!accessor;
                 break;
             }
             case "token": {
@@ -80,7 +80,7 @@ export class VaultClient<T extends VaultAuthentication> {
                 this.canRevoke = type === "service";
 
                 this.currentLeaseDuration = ttl;
-                isRenewable = renewable && accessor !== "";
+                isRenewable = renewable && !!accessor;
                 break;
             }
             default: {

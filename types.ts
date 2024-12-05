@@ -33,7 +33,7 @@ export const LoginResponse = z.object({
 export type LoginResponse = z.infer<typeof AuthData>;
 
 export const TokenLookupResponse = createGenericResponse(z.object({
-    accessor: z.string(),
+    accessor: z.string().optional(),
     renewable: z.boolean(),
     ttl: z.number(),
     type: TokenType,
